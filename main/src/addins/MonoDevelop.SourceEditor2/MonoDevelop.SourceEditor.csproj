@@ -164,8 +164,12 @@
     <Compile Include="MonoDevelop.SourceEditor\MessageBubbleCommands.cs" />
     <Compile Include="MonoDevelop.SourceEditor\MessageBubbleTextMarker.cs" />
     <Compile Include="MonoDevelop.SourceEditor\MessageBubbleCache.cs" />
-    <Compile Include="MonoDevelop.SourceEditor.OptionPanels\ColorShemeEditor.cs" />
-    <Compile Include="gtk-gui\MonoDevelop.SourceEditor.OptionPanels.ColorShemeEditor.cs" />
+    <Compile Include="MonoDevelop.SourceEditor.OptionPanels\XwtColorSchemeEditor.cs" />
+    <Compile Include="MonoDevelop.SourceEditor.OptionPanels\LabeledColorButton.cs" />
+    <Compile Include="MonoDevelop.SourceEditor.OptionPanels\ColorSchemeEditorHistory.cs" />
+    <Compile Include="MonoDevelop.SourceEditor.OptionPanels\CodeSamples.cs" />
+    <Compile Include="MonoDevelop.SourceEditor.OptionPanels\XwtColorSchemeEditor.GUI.cs" />
+    <Compile Include="MonoDevelop.SourceEditor.OptionPanels\TreeStoreExtensions.cs" />
     <Compile Include="MonoDevelop.SourceEditor.OptionPanels\NewColorShemeDialog.cs" />
     <Compile Include="gtk-gui\MonoDevelop.SourceEditor.OptionPanels.NewColorShemeDialog.cs" />
     <Compile Include="MonoDevelop.SourceEditor.QuickTasks\QuickTaskStrip.cs" />
