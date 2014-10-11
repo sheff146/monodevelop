@@ -108,13 +108,11 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 		{
 			TreeIter selectedIter;
 			if (styleTreeview.Selection.GetSelected (out selectedIter)) {
-				var editor = new XwtColorSchemeEditor ();
-				var runCommand = editor.Run ();
+				var editor = new XwtColorSchemeEditor (this);
+				var colorScheme = (Mono.TextEditor.Highlighting.ColorScheme)this.styleStore.GetValue (selectedIter, 1);
+				editor.SetScheme (colorScheme);
+				editor.Run ();
 				editor.Dispose ();
-				//var editor = new ColorShemeEditor (this);
-				//var colorScheme = (Mono.TextEditor.Highlighting.ColorScheme)this.styleStore.GetValue (selectedIter, 1);
-				//editor.SetSheme (colorScheme);
-				//MessageService.ShowCustomDialog (editor, dialog);
 			}
 		}
 
