@@ -34,6 +34,7 @@ using MonoDevelop.Ide.Gui;
 using MonoDevelop.Components.Commands;
 using MonoDevelop.Projects;
 using MonoDevelop.Ide;
+using System.Linq;
 
 namespace MonoDevelop.Debugger
 {
@@ -598,6 +599,17 @@ namespace MonoDevelop.Debugger
 		}
 	}
 
+	class ShowBreakpointsHandler: CommandHandler
+	{
+		protected override void Run ()
+		{
+			var breakpointsPad = IdeApp.Workbench.Pads.FirstOrDefault (p => p.Id == "MonoDevelop.Debugger.BreakpointPad");
+			if (breakpointsPad != null) {
+				breakpointsPad.BringToFront ();
+			}
+		}
+	}
+
 	class RunToCursorHandler : CommandHandler
 	{
 		protected override void Run ()
@@ -737,8 +749,12 @@ namespace MonoDevelop.Debugger
 
 			try {
 				DebuggingService.SetNextStatement (doc.FileName, doc.Editor.Caret.Line, doc.Editor.Caret.Column);
-			} catch (NotSupportedException) {
-				MessageService.ShowError ("Unable to set the next statement to this location.");
+			} catch (Exception e) {
+				if (e is NotSupportedException || e.InnerException is NotSupportedException) {
+					MessageService.ShowError ("Unable to set the next statement to this location.");
+				} else {
+					throw;
+				}
 			}
 		}
 	}

@@ -29,6 +29,7 @@
 using System;
 using NuGet;
 using MonoDevelop.PackageManagement;
+using MonoDevelop.Core;
 
 namespace ICSharpCode.PackageManagement
 {
@@ -51,6 +52,7 @@ namespace ICSharpCode.PackageManagement
 		static readonly ProjectTargetFrameworkMonitor projectTargetFrameworkMonitor;
 		static readonly PackageCompatibilityHandler packageCompatibilityHandler;
 		static readonly UpdatedPackagesInSolution updatedPackagesInSolution;
+		static readonly PackageManagementProjectOperations projectOperations;
 
 		static PackageManagementServices()
 		{
@@ -76,6 +78,8 @@ namespace ICSharpCode.PackageManagement
 
 			updatedPackagesInSolution = new UpdatedPackagesInSolution (solution, registeredPackageRepositories, packageManagementEvents);
 
+			projectOperations = new PackageManagementProjectOperations (solution, registeredPackageRepositories, backgroundPackageActionRunner, packageManagementEvents);
+
 			InitializeCredentialProvider();
 		}
 		
@@ -86,9 +90,19 @@ namespace ICSharpCode.PackageManagement
 
 		static SettingsCredentialProvider CreateSettingsCredentialProvider (ICredentialProvider credentialProvider)
 		{
-			ISettings settings = Settings.LoadDefaultSettings (null, null, null);
+			ISettings settings = LoadSettings ();
 			var packageSourceProvider = new PackageSourceProvider (settings);
 			return new SettingsCredentialProvider(credentialProvider, packageSourceProvider);
+		}
+
+		static ISettings LoadSettings ()
+		{
+			try {
+				return Settings.LoadDefaultSettings (null, null, null);
+			} catch (Exception ex) {
+				LoggingService.LogInternalError ("Unable to load NuGet.Config.", ex);
+			}
+			return NullSettings.Instance;
 		}
 
 		public static PackageManagementOptions Options {
@@ -149,6 +163,10 @@ namespace ICSharpCode.PackageManagement
 
 		public static IUpdatedPackagesInSolution UpdatedPackagesInSolution {
 			get { return updatedPackagesInSolution; }
+		}
+
+		public static IPackageManagementProjectOperations ProjectOperations {
+			get { return projectOperations; }
 		}
 	}
 }
