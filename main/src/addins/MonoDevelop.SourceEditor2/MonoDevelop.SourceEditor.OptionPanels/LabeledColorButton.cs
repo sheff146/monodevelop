@@ -29,21 +29,31 @@ using Xwt.Drawing;
 
 namespace MonoDevelop.SourceEditor.OptionPanels
 {
-	public class LabeledColorButton:VBox
+	public class LabeledColorButton:HBox
 	{
 		Color color = Colors.AliceBlue;
 		Label label = new Label ();
-		Button colorButton = new Button ("Color");
+		Button colorButton = new Button () { ImagePosition = ContentPosition.Center, Style = ButtonStyle.Flat };
+		ImageBuilder builder = new ImageBuilder (40, 15);
 
 		public LabeledColorButton ()
 		{
 			PackStart (label);
 			PackStart (colorButton);
+			SetColorToButton (Color);
 			colorButton.Clicked += ColorButton_Clicked;
 		}
 
+		private void SetColorToButton (Color color)
+		{
+			builder.Context.SetColor (color);
+			builder.Context.Rectangle (0, 0, builder.Width, builder.Height);
+			builder.Context.Fill ();
+			colorButton.Image = builder.ToBitmap ();
+		}
+
 		public LabeledColorButton (string labelText)
-			:this()
+			: this ()
 		{
 			this.label.Text = labelText;
 		}
@@ -51,14 +61,16 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 		public event EventHandler ColorSet;
 
 		public string LabelText {
-			get{ return label.Text;}
-			set{ label.Text = value;}
+			get{ return label.Text; }
+			set{ label.Text = value; }
 		}
 
 		public Color Color {
-			get{ return color;}
+			get{ return color; }
 			set {
 				color = value;
+				SetColorToButton (color);
+
 				if (ColorSet != null)
 					ColorSet (this, new EventArgs ());
 			}

@@ -30,107 +30,84 @@ using Xwt;
 using Xwt.Drawing;
 using MonoDevelop.Core;
 using MonoDevelop.Ide;
+using MonoDevelop.Ide.Gui;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace MonoDevelop.SourceEditor.OptionPanels
 {
 	public partial class XwtColorSchemeEditor:Dialog
 	{
-		TextEditor textEditor;
-		ColorScheme colorScheme;
-		string fileName;
-		HighlightingPanel panel;
-		DataField<string> nameField = new DataField<string> ();
-		DataField<object> styleField = new DataField<object> ();
-		DataField<ColorScheme.PropertyDecsription> propertyField = new DataField<ColorScheme.PropertyDecsription> ();
-		TreeStore colorStore;
-		TreeView treeviewColors = new TreeView ();
-		LabeledColorButton colorbuttonPrimary = new LabeledColorButton ("Primary color:");
-		LabeledColorButton colorbuttonSecondary = new LabeledColorButton ("Secondary color:");
-		LabeledColorButton colorbuttonBorder = new LabeledColorButton ("Border color:");
-		ToggleButton togglebuttonBold = new ToggleButton ("B");
-		ToggleButton togglebuttonItalic = new ToggleButton ("I");
-		Button buttonFormat = new Button ("FBP");
-		TextEntry entryName = new TextEntry ();
-		TextEntry entryDescription = new TextEntry ();
-		TextEntry searchEntry = new TextEntry ();
-
 		public XwtColorSchemeEditor (HighlightingPanel panel)
 		{
 			this.panel = panel;
-
-			this.Buttons.Add (new DialogButton (Command.Cancel));
-			this.Buttons.Add (new DialogButton (Command.Ok));
-
-			colorStore = new TreeStore (nameField, styleField, propertyField);
-
-			var mainTable = new Table ();
-
-			var headerTable = new Table ();
-			headerTable.Add (new Label () { Text="Name:" }, 0, 0);
-			headerTable.Add (entryName, 1, 0);
-			headerTable.Add (new Label () { Text="Description:" }, 2, 0);
-			headerTable.Add (entryDescription, 3, 0, 1, 1, true);
-			mainTable.Add (headerTable, 0, 0, 1, 1, true, false, WidgetPlacement.Fill, WidgetPlacement.Start);
-
-			var table = new Table ();
-
-			var commandHBox = new HBox ();
-			commandHBox.PackStart (new Button ("Undo"));
-			commandHBox.PackStart (new Button ("Redo"));
-			commandHBox.PackStart (new Button ("AutoSet"));
-			table.Add (commandHBox, 0, 0);
-
-			var adjustHBox = new HBox ();
-			adjustHBox.PackStart (colorbuttonPrimary);
-			adjustHBox.PackStart (colorbuttonSecondary);
-			adjustHBox.PackStart (colorbuttonBorder);
-			adjustHBox.PackStart (togglebuttonBold, false, WidgetPlacement.End);
-			adjustHBox.PackStart (togglebuttonItalic, false, WidgetPlacement.End);
-			adjustHBox.PackStart (buttonFormat, false, WidgetPlacement.End);
-			table.Add (adjustHBox, 0, 1);
-
-			this.colorbuttonPrimary.ColorSet += StyleChanged;
-			this.colorbuttonSecondary.ColorSet += StyleChanged;
-			this.colorbuttonBorder.ColorSet += StyleChanged;
-			this.togglebuttonBold.Toggled += StyleChanged;
-			this.togglebuttonItalic.Toggled += StyleChanged;
-
-			this.textEditor = new TextEditor ();
-			this.textEditor.Options = DefaultSourceEditorOptions.Instance;
+			Build ();
 			this.textEditor.ShowAll ();
-			var toolkit = Toolkit.CurrentEngine;
-			var wrappedTextEditor = toolkit.WrapWidget (textEditor);
-			var scrollView = new ScrollView (wrappedTextEditor) {
-				HorizontalScrollPolicy=ScrollPolicy.Always,
-				VerticalScrollPolicy=ScrollPolicy.Always
-			};
-			table.Add (scrollView, 0, 2, 1, 1, true, true);
-
-			this.treeviewColors = new TreeView ();
-			this.treeviewColors.Columns.Add (GettextCatalog.GetString ("Name"), nameField);
-			this.treeviewColors.HeadersVisible = false;
-			this.treeviewColors.DataSource = colorStore;
-			this.treeviewColors.SelectionChanged += HandleTreeviewColorsSelectionChanged;
-
-			var box = new HPaned ();
-
-			var treeBox = new VBox ();
-			treeBox.PackStart (searchEntry);
-			treeBox.PackStart (treeviewColors, true);
-			box.Panel1.Content = treeBox;
-			box.Panel2.Content = table;
-			box.Panel2.Resize = true;
-			box.Position = 400;
-			
-			mainTable.Add (box, 0, 1, 1, 1, true, true);
-			this.Content = mainTable;
-
-			this.Height = 400;
-
-			HandleTreeviewColorsSelectionChanged (null, null);
+			TreeviewColorsSelectionChanged (null, null);
 		}
 
-		void HandleTreeviewColorsSelectionChanged (object sender, EventArgs e)
+		void SearchTextChanged (object sender, EventArgs e)
+		{
+			var searchText = searchEntry.Text;
+			var searchStore = CreateStoreByQuery (searchText);
+			this.treeviewColors.DataSource = searchStore;
+			this.treeviewColors.ExpandAll ();
+		}
+
+		ITreeDataSource CreateStoreByQuery (string searchText)
+		{
+			colorStore.Clear ();
+			var treeStore = colorStore;
+			var styleCollection = ColorScheme.TextColors
+				.Concat (ColorScheme.AmbientColors)
+				.Where (desc => desc.Attribute.Name.ToLower ()
+					.Contains (searchText.ToLower ()));
+
+			FillTreeStore (treeStore, styleCollection, this.colorScheme);
+			return treeStore;
+		}
+
+		void CanUndoRedoChanged (object sender, EventArgs e)
+		{
+			undoButton.Sensitive = history.CanUndo;
+			redoButton.Sensitive = history.CanRedo;
+		}
+
+		void Undo (object sender, EventArgs e)
+		{
+			if (!history.CanUndo)
+				return;
+
+			history.Undo ();
+			var pos = treeviewColors.SelectedRow;
+			if (pos == null) {
+				ApplyNewScheme (GroupNames.Other);
+				return;
+			}
+
+			var navigator = colorStore.GetNavigatorAt (pos);
+			var groupName = GetGroupNameFromNode (navigator);
+			ApplyNewScheme (groupName);
+		}
+
+		void Redo (object sender, EventArgs e)
+		{
+			if (!history.CanRedo)
+				return;
+
+			history.Redo ();
+			var pos = treeviewColors.SelectedRow;
+			if (pos == null) {
+				ApplyNewScheme (GroupNames.Other);
+				return;
+			}
+
+			var navigator = colorStore.GetNavigatorAt (pos);
+			var groupName = GetGroupNameFromNode (navigator);
+			ApplyNewScheme (groupName);
+		}
+
+		void TreeviewColorsSelectionChanged (object sender, EventArgs e)
 		{
 			this.colorbuttonPrimary.Sensitive = false;
 			this.colorbuttonSecondary.Sensitive = false;
@@ -146,22 +123,27 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			var o = navigator.GetValue (styleField);
 
 			if (o is ChunkStyle)
-				SelectChunkStyle ((ChunkStyle)o);
+				ChunkStyleSelected ((ChunkStyle)o);
 
 			if (o is AmbientColor)
-				SelectAmbientColor ((AmbientColor)o);
+				AmbientColorSelected ((AmbientColor)o);
+
+			var groupName = GetGroupNameFromNode (navigator);
+			ApplyNewScheme (groupName);
 		}
 
-		void SelectChunkStyle (ChunkStyle chunkStyle)
+		void ChunkStyleSelected (ChunkStyle chunkStyle)
 		{
+			handleUIEvents = false;
+
 			SetColorToButton (colorbuttonPrimary, chunkStyle.Foreground);
 			SetColorToButton (colorbuttonSecondary, chunkStyle.Background);
 
 			this.togglebuttonBold.Active = chunkStyle.FontWeight == Xwt.Drawing.FontWeight.Bold;
 			this.togglebuttonItalic.Active = chunkStyle.FontStyle == Xwt.Drawing.FontStyle.Italic;
 
-			this.colorbuttonPrimary.LabelText = "Foreground:";
-			this.colorbuttonSecondary.LabelText = "Background:";
+			this.colorbuttonPrimary.LabelText = "Foreground";
+			this.colorbuttonSecondary.LabelText = "Background";
 
 			this.colorbuttonPrimary.Sensitive = true;
 			this.colorbuttonSecondary.Sensitive = true;
@@ -171,10 +153,14 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			this.togglebuttonBold.Visible = true;
 			this.togglebuttonItalic.Visible = true;
 			this.colorbuttonBorder.Visible = false;
+
+			handleUIEvents = true;
 		}
 
-		void SelectAmbientColor (AmbientColor ambientColor)
+		void AmbientColorSelected (AmbientColor ambientColor)
 		{
+			handleUIEvents = false;
+
 			SetColorToButton (colorbuttonPrimary, ambientColor.Color);
 			SetColorToButton (colorbuttonSecondary, ambientColor.SecondColor);
 			SetColorToButton (colorbuttonBorder, ambientColor.BorderColor);
@@ -187,8 +173,10 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			this.togglebuttonBold.Visible = false;
 			this.togglebuttonItalic.Visible = false;
 
-			this.colorbuttonPrimary.LabelText = "Primary color:";
-			this.colorbuttonSecondary.LabelText = "Secondary color:";
+			this.colorbuttonPrimary.LabelText = "Primary";
+			this.colorbuttonSecondary.LabelText = "Secondary";
+
+			handleUIEvents = true;
 		}
 
 		void SetColorToButton (LabeledColorButton button, Cairo.Color color)
@@ -198,6 +186,9 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 
 		void StyleChanged (object sender, EventArgs e)
 		{
+			if (!handleUIEvents)
+				return;
+
 			TreePosition pos = treeviewColors.SelectedRow;
 			if (pos == null)
 				return;
@@ -205,57 +196,123 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			var navigator = colorStore.GetNavigatorAt (pos);
 			var o = navigator.GetValue (styleField);
 
-			if (o is ChunkStyle) {
-				SetChunkStyle (navigator, (ChunkStyle)o);
-			} else if (o is AmbientColor) {
-				SetAmbientColor (navigator, (AmbientColor)o);
-			}
+			if (o is ChunkStyle)
+				ChangeChunkStyle (navigator, (ChunkStyle)o);
+			else if (o is AmbientColor)
+				ChangeAmbientColor (navigator, (AmbientColor)o);
 		}
 
-		void SetChunkStyle (TreeNavigator navigator, ChunkStyle oldStyle)
+		void ChangeChunkStyle (TreeNavigator navigator, ChunkStyle oldStyle)
 		{
 			var newStyle = new ChunkStyle (oldStyle);
 			newStyle.Foreground = GetColorFromButton (colorbuttonPrimary);
 			newStyle.Background = GetColorFromButton (colorbuttonSecondary);
 
-			if (togglebuttonBold.Active) {
-				newStyle.FontWeight = FontWeight.Bold;
-			} else {
-				newStyle.FontWeight = FontWeight.Normal;
-			}
+			newStyle.FontWeight = togglebuttonBold.Active
+				? FontWeight.Bold
+				: FontWeight.Normal;
 
-			if (togglebuttonItalic.Active) {
-				newStyle.FontStyle = FontStyle.Italic;
-			} else {
-				newStyle.FontStyle = FontStyle.Normal;
-			}
+			newStyle.FontStyle = togglebuttonItalic.Active 
+				? FontStyle.Italic 
+				: FontStyle.Normal;
 
-			navigator.SetValue (styleField, newStyle);
+			if (handleUIEvents)
+				history.AddCommand (new ChangeChunkStyleCommand (oldStyle, newStyle, navigator.GetValue (nameField)));
 
+			var groupName = GetGroupNameFromNode (navigator);
+			ApplyNewScheme (groupName);
+		}
+
+		string GetGroupNameFromNode (TreeNavigator navigator)
+		{
+			var property = navigator.GetValue (propertyField);
+			if (property != null)
+				return property.Attribute.GroupName;
+
+			var name = navigator.GetValue (nameField);
+			if (name != null)
+				return name;
+
+			return GroupNames.Other;
+		}
+
+		void ApplyNewScheme (string groupName)
+		{
 			var newscheme = colorScheme.Clone ();
-			ApplyStyle (newscheme);
+			WriteDataToScheme (newscheme);
+			this.colorScheme = newscheme;
 
 			this.textEditor.TextViewMargin.PurgeLayoutCache ();
-			this.textEditor.Document.MimeType = "text/x-csharp";
+			SetCodeExample (groupName);
 			this.textEditor.GetTextEditorData ().ColorStyle = newscheme;
 			this.textEditor.QueueDraw ();
 		}
 
-		void SetAmbientColor (TreeNavigator navigator, AmbientColor oldStyle)
+		void SetCodeExample (string groupName)
+		{
+			GetSampleFromEditor ();
+			switch (groupName) {
+			case GroupNames.XML:
+				SetEditorText (CodeSamples.XML, "application/xml");
+				break;
+			case GroupNames.HTML:
+				SetEditorText (CodeSamples.Web, "text/html");
+				break;
+			case GroupNames.CSS:
+				SetEditorText (CodeSamples.CSS, "text/css");
+				break;
+			case GroupNames.Script:
+				SetEditorText (CodeSamples.Javascript, "text/javascript");
+				break;
+			case GroupNames.CSharp:
+				SetEditorText (CodeSamples.CSharp, "text/x-csharp");
+				break;
+			default:
+				SetEditorText (CodeSamples.Text, "text");
+				break;
+			}
+		}
+
+		void GetSampleFromEditor ()
+		{
+			switch (this.textEditor.MimeType) {
+			case "application/xml":
+				CodeSamples.XML = textEditor.Text;
+				break;
+			case "text/html":
+				CodeSamples.Web = textEditor.Text;
+				break;
+			case "text/css":
+				CodeSamples.CSS = textEditor.Text;
+				break;
+			case "text/javascript":
+				CodeSamples.Javascript = textEditor.Text;
+				break;
+			case "text/x-csharp":
+				CodeSamples.CSharp = textEditor.Text;
+				break;
+			}
+		}
+
+		void SetEditorText (string newText, string newMimeType)
+		{
+			if (this.textEditor.MimeType == newMimeType)
+				return;
+			this.textEditor.Text = newText;
+			this.textEditor.Document.MimeType = newMimeType;
+		}
+
+		void ChangeAmbientColor (TreeNavigator navigator, AmbientColor oldStyle)
 		{
 			var newStyle = new AmbientColor ();
 			newStyle.Color = GetColorFromButton (colorbuttonPrimary);
 			newStyle.SecondColor = GetColorFromButton (colorbuttonSecondary);
 
-			navigator.SetValue (styleField, newStyle);
+			if (handleUIEvents)
+				history.AddCommand (new ChangeAmbientColorCommand (oldStyle, newStyle, navigator.GetValue (nameField)));
 
-			var newscheme = colorScheme.Clone ();
-			ApplyStyle (newscheme);
-
-			this.textEditor.TextViewMargin.PurgeLayoutCache ();
-			this.textEditor.Document.MimeType = "text/x-csharp";
-			this.textEditor.GetTextEditorData ().ColorStyle = newscheme;
-			this.textEditor.QueueDraw ();
+			var groupName = GetGroupNameFromNode (navigator);
+			ApplyNewScheme (groupName);
 		}
 
 		Cairo.Color GetColorFromButton (LabeledColorButton button)
@@ -263,28 +320,34 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			return new Cairo.Color (button.Color.Red, button.Color.Green, button.Color.Blue, button.Color.Alpha);
 		}
 
-		void ApplyStyle (ColorScheme scheme)
+		void WriteDataToScheme (ColorScheme scheme)
 		{
 			scheme.Name = entryName.Text;
 			scheme.Description = entryDescription.Text;
 
-			TreePosition iter = treeviewColors.SelectedRow;
-			if (iter == null)
+			TreePosition pos = treeviewColors.SelectedRow;
+			if (pos == null)
 				return;
 
 			var navigator = colorStore.GetFirstNode ();
 
 			do {
-				var data = (ColorScheme.PropertyDecsription)navigator.GetValue (propertyField);
-				var style = navigator.GetValue (styleField);
-				data.Info.SetValue (scheme, style, null);
-			} while (navigator.MoveNext());			
+				navigator.MoveToChild ();
+
+				do {
+					var data = (ColorScheme.PropertyDecsription)navigator.GetValue (propertyField);
+					var style = navigator.GetValue (styleField);
+					data.Info.SetValue (scheme, style, null);
+				} while (navigator.MoveNext ());
+
+				navigator.MoveToParent ();
+			} while (navigator.MoveNext ());
 		}
 
 		protected override void OnCommandActivated (Command cmd)
 		{
 			if (cmd.Equals (Command.Ok)) {
-				ApplyStyle (colorScheme);
+				WriteDataToScheme (colorScheme);
 				try {
 					if (fileName.EndsWith (".vssettings", StringComparison.Ordinal)) {
 						System.IO.File.Delete (fileName);
@@ -321,33 +384,105 @@ namespace MonoDevelop.SourceEditor.OptionPanels
 			this.colorScheme = scheme;
 			this.entryName.Text = scheme.Name;
 			this.entryDescription.Text = scheme.Description;
-			this.textEditor.Document.MimeType = "text/x-csharp";
-			this.textEditor.GetTextEditorData ().ColorStyle = scheme;
-			this.textEditor.Text = @"using System;
+			SetCodeExample (GroupNames.CSharp);
+			var data = this.textEditor.GetTextEditorData ();
+			data.ColorStyle = scheme;
+			data.Caret.PositionChanged += CaretPositionChanged;
 
-// This is an example
-class Example
-{
-	public static void Main (string[] args)
-	{
-		Console.WriteLine (""Hello World"");
-	}
-}";
-			foreach (var data in ColorScheme.TextColors) {
-				var navigator = colorStore.AddNode ();
-				navigator.SetValue (nameField, data.Attribute.Name);
-				navigator.SetValue (propertyField, data);
-				navigator.SetValue (styleField, data.Info.GetValue (scheme, null));
-			}
+			var styleCollection = ColorScheme.TextColors.Concat (ColorScheme.AmbientColors);
+			FillTreeStore (colorStore, styleCollection, scheme);
 
-			foreach (var data in ColorScheme.AmbientColors) {
-				var navigator = colorStore.AddNode ();
-				navigator.SetValue (nameField, data.Attribute.Name);
-				navigator.SetValue (propertyField, data);
-				navigator.SetValue (styleField, data.Info.GetValue (scheme, null));
-			}
-
+			treeviewColors.ExpandAll ();
 			StyleChanged (null, null);
+		}
+
+		void FillTreeStore (TreeStore treeStore, IEnumerable<ColorScheme.PropertyDecsription> dataCollection, ColorScheme scheme)
+		{
+			foreach (var data in dataCollection) {
+				var parent = treeStore.GetGroupParentNode (data.Attribute.GroupName, nameField);
+				var navigator = parent.AddChild ();
+				SetValueToNode (navigator, scheme, data);
+			}
+		}
+
+		void SetValueToNode (TreeNavigator navigator, ColorScheme scheme, ColorScheme.PropertyDecsription data)
+		{
+			navigator.SetValue (nameField, data.Attribute.Name);
+			navigator.SetValue (propertyField, data);
+			navigator.SetValue (styleField, data.Info.GetValue (scheme, null));
+		}
+
+		void CaretPositionChanged (object sender, DocumentLocationEventArgs e)
+		{
+			var caret = this.textEditor.Caret;
+			var lineNumber = caret.Line;
+			var columnNumber = caret.Column;
+
+			var document = this.textEditor.Document;
+			var syntaxMode = document.SyntaxMode;
+			var line = document.GetLine (lineNumber);
+
+			var lineChunks = syntaxMode.GetChunks (this.colorScheme, line, line.Offset, line.Length);
+			var offset = line.Offset + columnNumber - 1;
+			var chunk = lineChunks.FirstOrDefault (ch => ch.Offset <= offset && ch.EndOffset >= offset);
+			if (chunk == null) {
+				treeviewColors.UnselectAll ();
+				return;
+			}
+
+			var styleName = chunk.Style;
+			var navigator = colorStore.GetNodeFromStyleName (styleName, propertyField);
+			if (navigator == null) {
+				treeviewColors.UnselectAll ();
+				return;
+			}
+
+			if (formatByPatternMode) {
+				var oldNavigator = colorStore.GetNavigatorAt (treeviewColors.SelectedRow);
+				var oldStyle = oldNavigator.GetValue (styleField);
+				var newStyle = navigator.GetValue (styleField);
+				if (oldStyle.GetType () == newStyle.GetType ()) {
+					this.treeviewColors.SelectRow (navigator.CurrentPosition);
+					CopyStyle (oldStyle, newStyle, oldNavigator);
+					this.treeviewColors.SelectRow (oldNavigator.CurrentPosition);
+				}
+				this.buttonFormat.Active = false;
+			} else {
+				this.treeviewColors.SelectRow (navigator.CurrentPosition);
+				treeviewColors.ScrollToRow (navigator.CurrentPosition);
+			}
+		}
+
+		void CopyStyle (object oldStyle, object newStyle, TreeNavigator navigator)
+		{
+			var oldChunkStyle = oldStyle as ChunkStyle;
+			if (oldChunkStyle != null) {
+				var newChunkStyle = newStyle as ChunkStyle;
+				oldChunkStyle.Background = newChunkStyle.Background;
+				oldChunkStyle.FontStyle = newChunkStyle.FontStyle;
+				oldChunkStyle.FontWeight = newChunkStyle.FontWeight;
+				oldChunkStyle.Foreground = newChunkStyle.Foreground;
+				oldChunkStyle.Underline = newChunkStyle.Underline;
+				ChangeChunkStyle (navigator, oldChunkStyle);
+				return;
+			}
+
+			var oldAmbientColor = oldStyle as AmbientColor;
+			if (oldAmbientColor != null) {
+				var newAmbientColor = newStyle as AmbientColor;
+				oldAmbientColor.Color = newAmbientColor.Color;
+				if (newAmbientColor.HasBorderColor && oldAmbientColor.HasBorderColor)
+					oldAmbientColor.BorderColor = newAmbientColor.BorderColor;
+				if (newAmbientColor.HasSecondColor && oldAmbientColor.HasSecondColor)
+					oldAmbientColor.SecondColor = newAmbientColor.SecondColor;
+				ChangeAmbientColor (navigator, oldAmbientColor);
+				return;
+			}
+		}
+
+		void FormatByPatternToggled (object sender, EventArgs e)
+		{
+			formatByPatternMode = !formatByPatternMode;
 		}
 	}
 }
